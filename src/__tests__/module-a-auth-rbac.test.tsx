@@ -16,7 +16,7 @@ import {
   hasPermission,
 } from '@/features/auth/permissions';
 
-describe('Module A â€” Authentication, Organizations, and RBAC', () => {
+describe('Module A Authentication, Organizations, and RBAC', () => {
   beforeEach(() => {
     window.sessionStorage.clear();
     mockDb.reset();

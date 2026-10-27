@@ -15,7 +15,7 @@ import {
 import { AppProviders } from '@/providers/app-providers';
 import HomePage from '@/app/page';
 
-describe('Module 0 â€” Project Foundation & Mock Infrastructure', () => {
+describe('Module 0 Project Foundation & Mock Infrastructure', () => {
   it('deterministically seeds 3 organizations and 10,200 employees (10,000 in org-acme)', () => {
     const orgs = mockDb.getOrganizations();
     expect(orgs).toHaveLength(3);

@@ -15,7 +15,7 @@ import {
 import { mockAuthApi } from '@/lib/mock-api/auth-api';
 import { useUiStore } from '@/store/ui-store';
 
-describe('Module B â€” Advanced Employee Management Table (10,000+ Records & 9 Critical Scenarios)', () => {
+describe('Module B Advanced Employee Management Table (10,000+ Records & 9 Critical Scenarios)', () => {
   beforeEach(() => {
     window.sessionStorage.clear();
     window.history.replaceState(null, '', '/');
@@ -26,7 +26,7 @@ describe('Module B â€” Advanced Employee Management Table (10,000+ Records 
     useUiStore.getState().resetUiStore();
   });
 
-  it('Scenario 1: Search for "Asad", then immediately search for "Rahul" â€” stale "Asad" response never overwrites "Rahul"', async () => {
+  it('Scenario 1: Search for "Asad", then immediately search for "Rahul" stale "Asad" response never overwrites "Rahul"', async () => {
     const user = userEvent.setup();
 
     render(

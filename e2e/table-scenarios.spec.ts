@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('Module B â€” Employee Management Table E2E', () => {
+test.describe('Module B Employee Management Table E2E', () => {
   test('Rapid search race ("Asad" then "Rahul") never displays stale results and URL state survives refresh', async ({
     page,
   }) => {

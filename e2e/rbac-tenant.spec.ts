@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('Module A â€” Authentication, Organizations, and RBAC E2E', () => {
+test.describe('Module A Authentication, Organizations, and RBAC E2E', () => {
   test('Super Admin switches organizations, sees isolated records, and survives page reload', async ({
     page,
   }) => {

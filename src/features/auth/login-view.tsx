@@ -65,7 +65,7 @@ export function LoginView(): React.JSX.Element {
                 {env.NEXT_PUBLIC_APP_NAME}
               </h1>
               <p className="text-xs text-slate-500">
-                Multi-Tenant Admin Portal â€” Authoritative RBAC & Session Isolation
+                Multi-Tenant Admin Portal Authoritative RBAC & Session Isolation
               </p>
             </div>
           </div>

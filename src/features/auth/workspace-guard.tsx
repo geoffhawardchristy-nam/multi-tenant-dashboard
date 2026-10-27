@@ -380,7 +380,7 @@ export function WorkspaceGuard(): React.JSX.Element {
               <div className="flex items-center gap-2 font-semibold">
                 {probeResult.status === 'blocked' ? (
                   <span>
-                    Rejected by Mock API Boundary â€” HTTP {probeResult.httpStatus} (
+                    Rejected by Mock API Boundary HTTP {probeResult.httpStatus} (
                     {probeResult.code})
                   </span>
                 ) : (
