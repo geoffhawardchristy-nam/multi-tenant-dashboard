@@ -51,6 +51,7 @@ export type SortField =
 export type SortDirection = 'asc' | 'desc';
 
 export interface EmployeeListQueryParams {
+  readonly token: string | null | undefined;
   readonly organizationId: string;
   readonly page: number;
   readonly pageSize: number;
@@ -69,6 +70,52 @@ export interface PaginatedResponse<TItem> {
   readonly currentPage: number;
   readonly pageSize: number;
   readonly organizationId: string;
+}
+
+export interface CreateEmployeeRequest {
+  readonly token: string | null | undefined;
+  readonly organizationId: string;
+  readonly idempotencyKey: string;
+  readonly firstName: string;
+  readonly lastName: string;
+  readonly email: string;
+  readonly department: EmployeeDepartment;
+  readonly roleTitle: EmployeeRoleTitle;
+  readonly status: EmployeeStatus;
+  readonly salaryUsd: number;
+  readonly hireDate: string;
+}
+
+export interface UpdateEmployeeRequest {
+  readonly token: string | null | undefined;
+  readonly organizationId: string;
+  readonly employeeId: string;
+  readonly expectedVersion: number;
+  readonly firstName: string;
+  readonly lastName: string;
+  readonly email: string;
+  readonly department: EmployeeDepartment;
+  readonly roleTitle: EmployeeRoleTitle;
+  readonly status: EmployeeStatus;
+  readonly salaryUsd: number;
+  readonly hireDate: string;
+}
+
+export interface DeleteEmployeeRequest {
+  readonly token: string | null | undefined;
+  readonly organizationId: string;
+  readonly employeeId: string;
+}
+
+export interface BulkDeleteEmployeesRequest {
+  readonly token: string | null | undefined;
+  readonly organizationId: string;
+  readonly employeeIds: ReadonlyArray<string>;
+}
+
+export interface BulkDeleteEmployeesResponse {
+  readonly deletedCount: number;
+  readonly deletedIds: ReadonlyArray<string>;
 }
 
 export interface LoginRequest {

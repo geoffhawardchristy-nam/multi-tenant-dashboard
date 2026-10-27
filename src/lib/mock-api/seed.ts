@@ -79,9 +79,8 @@ export const SEED_ACCOUNTS: ReadonlyArray<MockCredentialAccount> = [
   },
 ];
 
+// Note: 'Asad' and 'Rahul' are reserved exclusively for deterministic records emp-00001 and emp-00002
 const FIRST_NAMES = [
-  'Asad',
-  'Rahul',
   'Aarav',
   'Sophia',
   'Liam',
@@ -100,6 +99,8 @@ const FIRST_NAMES = [
   'Julian',
   'Fatima',
   'Vikram',
+  'Rohan',
+  'kabir',
 ] as const;
 
 const LAST_NAMES = [

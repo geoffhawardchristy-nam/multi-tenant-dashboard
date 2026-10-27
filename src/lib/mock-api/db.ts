@@ -16,24 +16,35 @@ import {
 } from './seed';
 
 const MOCK_SERVER_SESSIONS_STORAGE_KEY = 'nexus_mock_server_db_sessions_v1';
+const MOCK_SERVER_EMPLOYEE_DELTAS_KEY = 'nexus_mock_server_db_deltas_v1';
+
+interface EmployeeMutationDeltas {
+  readonly upserted: ReadonlyArray<Employee>;
+  readonly deletedIds: ReadonlyArray<string>;
+}
 
 export class MockDatabase {
   private organizations: Map<string, Organization> = new Map();
   private accounts: Map<string, MockCredentialAccount> = new Map();
   private sessions: Map<string, SessionRecord> = new Map();
   private employees: Map<string, Employee> = new Map();
+  private upsertedEmployees: Map<string, Employee> = new Map();
+  private deletedEmployeeIds: Set<string> = new Set();
   private mutationIdempotencyCache: Map<string, unknown> = new Map();
   private csvImportJobs: Map<string, CsvImportJob> = new Map();
 
   constructor(seedCount: number = env.NEXT_PUBLIC_DEFAULT_SEED_COUNT) {
-    this. initializeData(seedCount);
+    this.initializeData(seedCount);
     this.hydrateSessionsFromStorage();
+    this.hydrateEmployeeDeltasFromStorage();
   }
 
   private initializeData(seedCount: number): void {
     this.organizations.clear();
     this.accounts.clear();
     this.employees.clear();
+    this.upsertedEmployees.clear();
+    this.deletedEmployeeIds.clear();
     this.mutationIdempotencyCache.clear();
     this.csvImportJobs.clear();
 
@@ -81,7 +92,51 @@ export class MockDatabase {
       const serialized = JSON.stringify(Array.from(this.sessions.values()));
       window.sessionStorage.setItem(MOCK_SERVER_SESSIONS_STORAGE_KEY, serialized);
     } catch {
-      // Ignore storage quota errors in test environments
+      // Ignore storage quota errors
+    }
+  }
+
+  private hydrateEmployeeDeltasFromStorage(): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    try {
+      const raw = window.sessionStorage.getItem(MOCK_SERVER_EMPLOYEE_DELTAS_KEY);
+      if (!raw) {
+        return;
+      }
+      const parsed = JSON.parse(raw) as EmployeeMutationDeltas;
+      if (parsed && Array.isArray(parsed.deletedIds)) {
+        for (const id of parsed.deletedIds) {
+          this.deletedEmployeeIds.add(id);
+          this.employees.delete(id);
+        }
+      }
+      if (parsed && Array.isArray(parsed.upserted)) {
+        for (const emp of parsed.upserted) {
+          if (emp && typeof emp.id === 'string') {
+            this.upsertedEmployees.set(emp.id, emp);
+            this.employees.set(emp.id, emp);
+          }
+        }
+      }
+    } catch {
+      // Ignore malformed delta data
+    }
+  }
+
+  private persistEmployeeDeltasToStorage(): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    try {
+      const deltas: EmployeeMutationDeltas = {
+        upserted: Array.from(this.upsertedEmployees.values()),
+        deletedIds: Array.from(this.deletedEmployeeIds.values()),
+      };
+      window.sessionStorage.setItem(MOCK_SERVER_EMPLOYEE_DELTAS_KEY, JSON.stringify(deltas));
+    } catch {
+      // Ignore storage quota errors
     }
   }
 
@@ -89,6 +144,7 @@ export class MockDatabase {
     this.sessions.clear();
     if (typeof window !== 'undefined') {
       window.sessionStorage.removeItem(MOCK_SERVER_SESSIONS_STORAGE_KEY);
+      window.sessionStorage.removeItem(MOCK_SERVER_EMPLOYEE_DELTAS_KEY);
     }
     this.initializeData(seedCount);
   }
@@ -222,12 +278,45 @@ export class MockDatabase {
     return this.employees.get(employeeId);
   }
 
+  public findEmployeeByEmailInOrg(organizationId: string, email: string): Employee | undefined {
+    const normalized = email.trim().toLowerCase();
+    for (const emp of this.employees.values()) {
+      if (
+        emp.organizationId === organizationId &&
+        emp.email.toLowerCase() === normalized
+      ) {
+        return emp;
+      }
+    }
+    return undefined;
+  }
+
   public setEmployee(employee: Employee): void {
     this.employees.set(employee.id, employee);
+    this.deletedEmployeeIds.delete(employee.id);
+    this.upsertedEmployees.set(employee.id, employee);
+    this.persistEmployeeDeltasToStorage();
   }
 
   public deleteEmployee(employeeId: string): boolean {
-    return this.employees.delete(employeeId);
+    const existed = this.employees.delete(employeeId);
+    if (existed) {
+      this.upsertedEmployees.delete(employeeId);
+      this.deletedEmployeeIds.add(employeeId);
+      this.persistEmployeeDeltasToStorage();
+    }
+    return existed;
+  }
+
+  public generateNextEmployeeId(): string {
+    let maxNumeric = this.employees.size + this.deletedEmployeeIds.size + 1;
+    while (
+      this.employees.has(`emp-${String(maxNumeric).padStart(5, '0')}`) ||
+      this.deletedEmployeeIds.has(`emp-${String(maxNumeric).padStart(5, '0')}`)
+    ) {
+      maxNumeric += 1;
+    }
+    return `emp-${String(maxNumeric).padStart(5, '0')}`;
   }
 
   public getTotalEmployeeCount(): number {

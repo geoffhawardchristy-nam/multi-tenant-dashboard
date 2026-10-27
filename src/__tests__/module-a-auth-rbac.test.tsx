@@ -144,16 +144,16 @@ describe('Module A â€” Authentication, Organizations, and RBAC', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('active-tenant-heading')).toHaveTextContent('Acme Cloud Systems');
+      expect(screen.getByTestId('tenant-total-employees')).toHaveTextContent('10,000');
     });
-    expect(screen.getByTestId('tenant-total-employees')).toHaveTextContent('10,000');
 
     const switcher = screen.getByTestId('org-switcher-select');
     await user.selectOptions(switcher, 'org-globex');
 
     await waitFor(() => {
       expect(screen.getByTestId('active-tenant-heading')).toHaveTextContent('Globex FinTech Corp');
+      expect(screen.getByTestId('tenant-total-employees')).toHaveTextContent('120');
     });
-    expect(screen.getByTestId('tenant-total-employees')).toHaveTextContent('120');
 
     unmount();
 
@@ -165,6 +165,7 @@ describe('Module A â€” Authentication, Organizations, and RBAC', () => {
 
     await waitFor(() => {
       expect(screen.getByTestId('active-tenant-heading')).toHaveTextContent('Globex FinTech Corp');
+      expect(screen.getByTestId('tenant-total-employees')).toHaveTextContent('120');
     });
   });
 
@@ -219,7 +220,6 @@ describe('Module A â€” Authentication, Organizations, and RBAC', () => {
     });
     expect(screen.getByRole('alert')).toHaveTextContent(/session has expired/i);
 
-    // Click the dismiss (X) button and verify the banner disappears completely
     await user.click(screen.getByRole('button', { name: /dismiss notification/i }));
     expect(screen.queryByRole('alert')).not.toBeInTheDocument();
   });

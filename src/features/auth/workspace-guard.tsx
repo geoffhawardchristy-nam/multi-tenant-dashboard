@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { ShieldAlert, Users, FileSpreadsheet, Plus, Trash2, CheckCircle2 } from 'lucide-react';
+import { ShieldAlert, FileSpreadsheet, Plus, Trash2, CheckCircle2 } from 'lucide-react';
 import { mockAuthApi } from '@/lib/mock-api/auth-api';
 import { isMockApiError } from '@/lib/mock-api/errors';
 import {
@@ -11,6 +11,7 @@ import {
   StatusBanner,
 } from '@/components/feedback/state-views';
 import { useUiStore } from '@/store/ui-store';
+import { EmployeeTableSection } from '@/features/employees/employee-table-section';
 import { useAuth } from './auth-context';
 import { LoginView } from './login-view';
 import { TopNavbar } from './top-navbar';
@@ -186,12 +187,12 @@ export function WorkspaceGuard(): React.JSX.Element {
                 <button
                   type="button"
                   data-testid="create-employee-action-btn"
-                  onClick={() =>
-                    showBanner(
-                      'info',
-                      'Create Employee action authorized for your role. Full modal opens in Module C.'
-                    )
-                  }
+                  onClick={() => {
+                    const trigger = document.querySelector<HTMLButtonElement>(
+                      '[data-testid="open-create-employee-modal-btn"]'
+                    );
+                    trigger?.click();
+                  }}
                   className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white hover:bg-slate-800"
                 >
                   <Plus className="h-4 w-4" aria-hidden="true" />
@@ -203,7 +204,7 @@ export function WorkspaceGuard(): React.JSX.Element {
                   onClick={() =>
                     showBanner(
                       'info',
-                      'Bulk Delete action authorized for your role. Full table integration in Module B.'
+                      'Select one or more rows in the Employee Directory below to trigger Bulk Delete.'
                     )
                   }
                   className="inline-flex items-center gap-1.5 rounded-md border border-red-300 bg-red-50 px-3.5 py-2 text-xs font-semibold text-red-800 hover:bg-red-100"
@@ -257,94 +258,54 @@ export function WorkspaceGuard(): React.JSX.Element {
             }}
           />
         ) : overviewQuery.data ? (
-          <div className="space-y-6">
-            <section
-              aria-label="Tenant Employee Metrics"
-              className="grid gap-4 sm:grid-cols-4"
-            >
-              <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                <p className="text-xs font-medium uppercase text-slate-500">Total Employees</p>
-                <p
-                  data-testid="tenant-total-employees"
-                  className="mt-2 text-2xl font-bold text-slate-900"
-                >
-                  {overviewQuery.data.totalEmployees.toLocaleString()}
-                </p>
-                <p className="mt-1 text-xs text-slate-500">
-                  Strictly scoped to {overviewQuery.data.organization.id}
-                </p>
-              </div>
+          <section
+            aria-label="Tenant Employee Metrics"
+            className="grid gap-4 sm:grid-cols-4"
+          >
+            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+              <p className="text-xs font-medium uppercase text-slate-500">Total Employees</p>
+              <p
+                data-testid="tenant-total-employees"
+                className="mt-2 text-2xl font-bold text-slate-900"
+              >
+                {overviewQuery.data.totalEmployees.toLocaleString()}
+              </p>
+              <p className="mt-1 text-xs text-slate-500">
+                Strictly scoped to {overviewQuery.data.organization.id}
+              </p>
+            </div>
 
-              <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                <p className="text-xs font-medium uppercase text-slate-500">Active</p>
-                <p className="mt-2 text-2xl font-bold text-emerald-700">
-                  {overviewQuery.data.activeCount.toLocaleString()}
-                </p>
-              </div>
+            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+              <p className="text-xs font-medium uppercase text-slate-500">Active</p>
+              <p className="mt-2 text-2xl font-bold text-emerald-700">
+                {overviewQuery.data.activeCount.toLocaleString()}
+              </p>
+            </div>
 
-              <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                <p className="text-xs font-medium uppercase text-slate-500">Invited</p>
-                <p className="mt-2 text-2xl font-bold text-blue-700">
-                  {overviewQuery.data.invitedCount.toLocaleString()}
-                </p>
-              </div>
+            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+              <p className="text-xs font-medium uppercase text-slate-500">Invited</p>
+              <p className="mt-2 text-2xl font-bold text-blue-700">
+                {overviewQuery.data.invitedCount.toLocaleString()}
+              </p>
+            </div>
 
-              <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
-                <p className="text-xs font-medium uppercase text-slate-500">Suspended</p>
-                <p className="mt-2 text-2xl font-bold text-amber-700">
-                  {overviewQuery.data.suspendedCount.toLocaleString()}
-                </p>
-              </div>
-            </section>
-
-            <section
-              aria-labelledby="tenant-sample-heading"
-              className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
-            >
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Users className="h-5 w-5 text-slate-700" aria-hidden="true" />
-                  <h2 id="tenant-sample-heading" className="text-base font-bold text-slate-900">
-                    Tenant-Scoped Employee Preview ({overviewQuery.data.organization.name})
-                  </h2>
-                </div>
-                <span className="font-mono text-xs text-slate-500">
-                  Showing first 5 of {overviewQuery.data.totalEmployees.toLocaleString()} records
-                </span>
-              </div>
-
-              <div className="mt-4 overflow-x-auto">
-                <table className="w-full text-left text-sm" data-testid="tenant-sample-table">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-xs uppercase text-slate-500">
-                      <th className="py-2 pr-4">ID</th>
-                      <th className="py-2 pr-4">Name</th>
-                      <th className="py-2 pr-4">Email</th>
-                      <th className="py-2 pr-4">Department</th>
-                      <th className="py-2 pr-4">Tenant ID</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {overviewQuery.data.sampleEmployees.map((emp) => (
-                      <tr key={emp.id}>
-                        <td className="py-2.5 pr-4 font-mono text-xs text-slate-600">{emp.id}</td>
-                        <td className="py-2.5 pr-4 font-medium text-slate-900">{emp.fullName}</td>
-                        <td className="py-2.5 pr-4 font-mono text-xs text-slate-600">
-                          {emp.email}
-                        </td>
-                        <td className="py-2.5 pr-4 text-slate-700">{emp.department}</td>
-                        <td className="py-2.5 pr-4 font-mono text-xs font-semibold text-slate-800">
-                          {emp.organizationId}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          </div>
+            <div className="rounded-lg border border-slate-200 bg-white p-5 shadow-sm">
+              <p className="text-xs font-medium uppercase text-slate-500">Suspended</p>
+              <p className="mt-2 text-2xl font-bold text-amber-700">
+                {overviewQuery.data.suspendedCount.toLocaleString()}
+              </p>
+            </div>
+          </section>
         ) : null}
 
+        {/* Module B: Full 10,000+ Record Employee Management Table */}
+        <EmployeeTableSection
+          onDataMutated={() => {
+            void overviewQuery.refetch();
+          }}
+        />
+
+        {/* Backend Authorization & Tampered Request Verifier */}
         <section
           aria-labelledby="security-verifier-heading"
           className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm"

@@ -31,6 +31,7 @@ export function createAppQueryClient(): QueryClient {
         gcTime: 5 * 60_000,
         refetchOnWindowFocus: false,
         retry: shouldRetryRequest,
+        retryDelay: (attemptIndex) => Math.min(40 * 2 ** attemptIndex, 150),
       },
       mutations: {
         retry: false,
