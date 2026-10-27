@@ -48,6 +48,6 @@ test.describe('Module A â€” Authentication, Organizations, and RBAC E2E', (
     await page.getByTestId('simulate-expiry-btn').click();
 
     await expect(page.getByTestId('login-submit-btn')).toBeVisible();
-    await expect(page.getByRole('alert')).toContainText('session has expired');
+    await expect(page.getByTestId('status-banner')).toContainText('session has expired');
   });
 });

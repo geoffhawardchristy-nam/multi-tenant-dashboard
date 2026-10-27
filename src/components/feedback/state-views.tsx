@@ -18,6 +18,7 @@ export function LoadingSkeleton({
       aria-live="polite"
       aria-busy="true"
       aria-label={label}
+      data-testid="loading-skeleton"
       className="w-full space-y-3 rounded-lg border border-slate-200 bg-white p-6 shadow-sm"
     >
       <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -60,6 +61,7 @@ export function ErrorStateView({
     <div
       role="alert"
       aria-live="assertive"
+      data-testid="error-state-view"
       className="rounded-lg border border-red-200 bg-red-50 p-6 text-red-900 shadow-sm"
     >
       <div className="flex items-start gap-3">
@@ -109,6 +111,7 @@ export function EmptyStateView({
     <div
       role="region"
       aria-label={title}
+      data-testid="empty-state-view"
       className="flex flex-col items-center justify-center rounded-lg border border-dashed border-slate-300 bg-white px-6 py-12 text-center"
     >
       <div className="flex h-12 w-12 items-center justify-center rounded-full bg-slate-100 text-slate-500">
@@ -150,6 +153,7 @@ export function StatusBanner({
   return (
     <div
       role={variant === 'error' || variant === 'warning' ? 'alert' : 'status'}
+      data-testid="status-banner"
       className={`flex items-center justify-between gap-3 rounded-lg border px-4 py-3 text-sm ${styles[variant]}`}
     >
       <div className="flex items-center gap-2.5">
