@@ -15,6 +15,8 @@ import {
   type MockCredentialAccount,
 } from './seed';
 
+const MOCK_SERVER_SESSIONS_STORAGE_KEY = 'nexus_mock_server_db_sessions_v1';
+
 export class MockDatabase {
   private organizations: Map<string, Organization> = new Map();
   private accounts: Map<string, MockCredentialAccount> = new Map();
@@ -24,13 +26,13 @@ export class MockDatabase {
   private csvImportJobs: Map<string, CsvImportJob> = new Map();
 
   constructor(seedCount: number = env.NEXT_PUBLIC_DEFAULT_SEED_COUNT) {
-    this.reset(seedCount);
+    this. initializeData(seedCount);
+    this.hydrateSessionsFromStorage();
   }
 
-  public reset(seedCount: number = env.NEXT_PUBLIC_DEFAULT_SEED_COUNT): void {
+  private initializeData(seedCount: number): void {
     this.organizations.clear();
     this.accounts.clear();
-    this.sessions.clear();
     this.employees.clear();
     this.mutationIdempotencyCache.clear();
     this.csvImportJobs.clear();
@@ -49,6 +51,48 @@ export class MockDatabase {
     }
   }
 
+  private hydrateSessionsFromStorage(): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    try {
+      const raw = window.sessionStorage.getItem(MOCK_SERVER_SESSIONS_STORAGE_KEY);
+      if (!raw) {
+        return;
+      }
+      const parsed = JSON.parse(raw) as ReadonlyArray<SessionRecord>;
+      if (Array.isArray(parsed)) {
+        for (const record of parsed) {
+          if (record && typeof record.token === 'string') {
+            this.sessions.set(record.token, record);
+          }
+        }
+      }
+    } catch {
+      // Ignore malformed storage data
+    }
+  }
+
+  private persistSessionsToStorage(): void {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    try {
+      const serialized = JSON.stringify(Array.from(this.sessions.values()));
+      window.sessionStorage.setItem(MOCK_SERVER_SESSIONS_STORAGE_KEY, serialized);
+    } catch {
+      // Ignore storage quota errors in test environments
+    }
+  }
+
+  public reset(seedCount: number = env.NEXT_PUBLIC_DEFAULT_SEED_COUNT): void {
+    this.sessions.clear();
+    if (typeof window !== 'undefined') {
+      window.sessionStorage.removeItem(MOCK_SERVER_SESSIONS_STORAGE_KEY);
+    }
+    this.initializeData(seedCount);
+  }
+
   public getOrganizations(): Organization[] {
     return Array.from(this.organizations.values());
   }
@@ -62,10 +106,15 @@ export class MockDatabase {
   }
 
   public createSession(session: SessionRecord): void {
+    this.hydrateSessionsFromStorage();
     this.sessions.set(session.token, session);
+    this.persistSessionsToStorage();
   }
 
   public getSession(token: string): SessionRecord | undefined {
+    if (!this.sessions.has(token)) {
+      this.hydrateSessionsFromStorage();
+    }
     return this.sessions.get(token);
   }
 
@@ -73,7 +122,7 @@ export class MockDatabase {
     token: string,
     updater: (prev: SessionRecord) => SessionRecord
   ): SessionRecord {
-    const existing = this.sessions.get(token);
+    const existing = this.getSession(token);
     if (!existing) {
       throw new MockApiError({
         status: 401,
@@ -83,11 +132,14 @@ export class MockDatabase {
     }
     const updated = updater(existing);
     this.sessions.set(token, updated);
+    this.persistSessionsToStorage();
     return updated;
   }
 
   public deleteSession(token: string): void {
+    this.hydrateSessionsFromStorage();
     this.sessions.delete(token);
+    this.persistSessionsToStorage();
   }
 
   public requireAuthorizedSession(
@@ -103,7 +155,7 @@ export class MockDatabase {
       });
     }
 
-    const session = this.sessions.get(token);
+    const session = this.getSession(token);
     if (!session) {
       throw new MockApiError({
         status: 401,
@@ -113,7 +165,7 @@ export class MockDatabase {
     }
 
     if (Date.now() > session.expiresAtMs) {
-      this.sessions.delete(token);
+      this.deleteSession(token);
       throw new MockApiError({
         status: 401,
         code: 'SESSION_EXPIRED',

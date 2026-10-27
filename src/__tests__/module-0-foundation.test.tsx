@@ -12,7 +12,8 @@ import {
   ErrorStateView,
   LoadingSkeleton,
 } from '@/components/feedback/state-views';
-import DashboardFoundationPage from '@/app/page';
+import { AppProviders } from '@/providers/app-providers';
+import HomePage from '@/app/page';
 
 describe('Module 0 â€” Project Foundation & Mock Infrastructure', () => {
   it('deterministically seeds 3 organizations and 10,200 employees (10,000 in org-acme)', () => {
@@ -150,7 +151,11 @@ describe('Module 0 â€” Project Foundation & Mock Infrastructure', () => {
     await user.click(screen.getByRole('button', { name: /try again/i }));
     expect(onRetry).toHaveBeenCalledTimes(1);
 
-    render(<DashboardFoundationPage />);
+    render(
+      <AppProviders>
+        <HomePage />
+      </AppProviders>
+    );
     expect(screen.getByTestId('foundation-status-badge')).toHaveTextContent('Foundation Ready');
     expect(screen.getByTestId('org-card-org-acme')).toHaveTextContent('10,000 seeded employees');
   });

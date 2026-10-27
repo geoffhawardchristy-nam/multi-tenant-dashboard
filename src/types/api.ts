@@ -5,6 +5,7 @@ import type {
   EmployeeRoleTitle,
   EmployeeStatus,
   Organization,
+  UserRole,
 } from './domain';
 
 export type ApiErrorCode =
@@ -70,12 +71,45 @@ export interface PaginatedResponse<TItem> {
   readonly organizationId: string;
 }
 
+export interface LoginRequest {
+  readonly email: string;
+  readonly passwordPlain: string;
+}
+
+export interface SwitchOrganizationRequest {
+  readonly token: string;
+  readonly targetOrganizationId: string;
+}
+
 export interface SessionContextResponse {
   readonly token: string;
   readonly user: AuthenticatedUser;
   readonly activeOrganization: Organization;
   readonly availableOrganizations: ReadonlyArray<Organization>;
   readonly expiresAtMs: number;
+}
+
+export interface TenantOverviewResponse {
+  readonly organization: Organization;
+  readonly totalEmployees: number;
+  readonly activeCount: number;
+  readonly invitedCount: number;
+  readonly suspendedCount: number;
+  readonly departmentBreakdown: Readonly<Record<EmployeeDepartment, number>>;
+  readonly sampleEmployees: ReadonlyArray<
+    Pick<
+      Employee,
+      'id' | 'fullName' | 'email' | 'department' | 'roleTitle' | 'status' | 'organizationId'
+    >
+  >;
+}
+
+export interface SecurityProbeRequest {
+  readonly token: string;
+  readonly requestedOrganizationId: string;
+  readonly targetEmployeeId?: string;
+  readonly clientClaimedRole?: UserRole;
+  readonly operation: 'READ_TENANT' | 'MUTATE_EMPLOYEE' | 'SWITCH_ORG';
 }
 
 export interface FailureInjectionRule {
