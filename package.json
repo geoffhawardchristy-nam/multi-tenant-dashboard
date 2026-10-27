@@ -1,0 +1,53 @@
+{
+  "name": "multi-tenant-admin-dashboard",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "tsc --noEmit",
+    "lint": "next lint",
+    "format:check": "prettier --check \"src/**/*.{ts,tsx}\"",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "@hookform/resolvers": "3.9.0",
+    "@tanstack/react-query": "5.56.2",
+    "@tanstack/react-table": "8.20.5",
+    "@tanstack/react-virtual": "3.10.8",
+    "clsx": "2.1.1",
+    "lucide-react": "0.441.0",
+    "next": "14.2.13",
+    "papaparse": "5.4.1",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-hook-form": "7.53.0",
+    "tailwind-merge": "2.5.2",
+    "zod": "3.23.8",
+    "zustand": "4.5.5"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.47.2",
+    "@testing-library/jest-dom": "6.5.0",
+    "@testing-library/react": "16.0.1",
+    "@testing-library/user-event": "14.5.2",
+    "@types/node": "20.16.5",
+    "@types/papaparse": "5.3.14",
+    "@types/react": "18.3.8",
+    "@types/react-dom": "18.3.0",
+    "@vitejs/plugin-react": "4.3.1",
+    "autoprefixer": "10.4.20",
+    "eslint": "8.57.1",
+    "eslint-config-next": "14.2.13",
+    "jsdom": "25.0.0",
+    "postcss": "8.4.47",
+    "prettier": "3.3.3",
+    "tailwindcss": "3.4.12",
+    "typescript": "5.6.2",
+    "vitest": "2.1.1"
+  }
+}
