@@ -101,6 +101,8 @@ export type CsvRowStatus =
   | 'SKIPPED_EXISTING_IN_ORG'
   | 'INVALID';
 
+export type CsvJobState = 'IN_PROGRESS' | 'COMPLETED' | 'PARTIAL_FAILURE' | 'CANCELLED';
+
 export interface CsvImportRowState {
   readonly rowNumber: number;
   readonly idempotencyKey: string;
@@ -123,6 +125,7 @@ export interface CsvImportJob {
   readonly createdByUserId: string;
   readonly fileName: string;
   readonly totalRows: number;
+  readonly state: CsvJobState;
   readonly createdAt: string;
   readonly rows: ReadonlyArray<CsvImportRowState>;
 }

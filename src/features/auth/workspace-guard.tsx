@@ -38,8 +38,6 @@ export function WorkspaceGuard(): React.JSX.Element {
   const activeOrgId = session?.activeOrganization.id ?? '';
   const sessionToken = session?.token ?? '';
 
-  // Cross-tab synchronization: when another browser tab mutates employees in localStorage,
-  // automatically invalidate active tenant queries so the table and metrics stay in sync!
   useEffect(() => {
     if (typeof window === 'undefined' || !activeOrgId) {
       return;
@@ -246,12 +244,12 @@ export function WorkspaceGuard(): React.JSX.Element {
               <button
                 type="button"
                 data-testid="csv-import-action-btn"
-                onClick={() =>
-                  showBanner(
-                    'info',
-                    'CSV Bulk Import authorized for your role. Full 10k-row engine in Module D.'
-                  )
-                }
+                onClick={() => {
+                  const trigger = document.querySelector<HTMLButtonElement>(
+                    '[data-testid="open-csv-wizard-btn"]'
+                  );
+                  trigger?.click();
+                }}
                 className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50"
               >
                 <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />

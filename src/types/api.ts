@@ -1,5 +1,6 @@
 import type {
   AuthenticatedUser,
+  CsvImportJob,
   Employee,
   EmployeeDepartment,
   EmployeeRoleTitle,
@@ -116,6 +117,53 @@ export interface BulkDeleteEmployeesRequest {
 export interface BulkDeleteEmployeesResponse {
   readonly deletedCount: number;
   readonly deletedIds: ReadonlyArray<string>;
+}
+
+export interface CsvImportInitRowInput {
+  readonly rowNumber: number;
+  readonly firstName: string;
+  readonly lastName: string;
+  readonly email: string;
+  readonly department: string;
+  readonly roleTitle: string;
+  readonly status: string;
+  readonly salaryUsd: number | string;
+  readonly hireDate: string;
+  readonly forceRowFailureOnce?: boolean;
+}
+
+export interface CsvImportInitRequest {
+  readonly token: string | null | undefined;
+  readonly organizationId: string;
+  readonly fileName: string;
+  readonly rows: ReadonlyArray<CsvImportInitRowInput>;
+}
+
+export interface CsvImportChunkRequest {
+  readonly token: string | null | undefined;
+  readonly organizationId: string;
+  readonly jobId: string;
+  readonly startIndex: number;
+  readonly batchSize: number;
+  /**
+   * Deterministic test/simulation parameter:
+   * When set (e.g. 7000), the server commits rows up to `simulateNetworkFailureAfterRow`
+   * and immediately throws a simulated network failure so the client can test idempotent resume!
+   */
+  readonly simulateNetworkFailureAfterRow?: number;
+  readonly retryFailedRows?: boolean;
+}
+
+export interface CsvImportJobStatusResponse {
+  readonly job: CsvImportJob;
+  readonly pendingCount: number;
+  readonly succeededCount: number;
+  readonly failedCount: number;
+  readonly invalidCount: number;
+  readonly skippedExistingCount: number;
+  readonly duplicateInCsvCount: number;
+  readonly processedCount: number;
+  readonly isComplete: boolean;
 }
 
 export interface LoginRequest {

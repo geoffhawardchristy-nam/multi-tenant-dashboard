@@ -7,6 +7,7 @@ import {
   ArrowUp,
   ArrowUpDown,
   AlertOctagon,
+  FileSpreadsheet,
   Plus,
   RotateCcw,
   Search,
@@ -33,11 +34,12 @@ import {
   LoadingSkeleton,
 } from '@/components/feedback/state-views';
 import { useAuth } from '@/features/auth/auth-context';
-import { canMutateEmployees } from '@/features/auth/permissions';
+import { canImportCsv, canMutateEmployees } from '@/features/auth/permissions';
 import { useUiStore } from '@/store/ui-store';
 import { useTableUrlState } from './use-table-url-state';
 import { EmployeeTableRow } from './employee-row';
 import { EmployeeQuickModal, type EmployeeFormValues } from './employee-quick-modal';
+import { CsvImportWizard } from '@/features/csv-import/csv-import-wizard';
 
 const DEPARTMENTS: ReadonlyArray<EmployeeDepartment | 'ALL'> = [
   'ALL',
@@ -114,13 +116,12 @@ export function EmployeeTableSection({
     return () => clearTimeout(timerId);
   }, [searchInput, updateUrlState, urlState.search]);
 
-  // Stable ID-based row selection
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set());
   const [mutatingRowIds, setMutatingRowIds] = useState<ReadonlySet<string>>(() => new Set());
 
-  // Modal state for Create / Edit / Conflict Resolution
   const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+  const [isCsvWizardOpen, setIsCsvWizardOpen] = useState<boolean>(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [modalError, setModalError] = useState<string | null>(null);
   const [modalFieldErrors, setModalFieldErrors] = useState<
@@ -131,6 +132,7 @@ export function EmployeeTableSection({
   const activeOrgId = session?.activeOrganization.id ?? '';
   const sessionToken = session?.token ?? '';
   const canMutate = canMutateEmployees(session?.user.role);
+  const allowCsvImport = canImportCsv(session?.user.role);
 
   useEffect(() => {
     setSelectedIds(new Set());
@@ -362,7 +364,6 @@ export function EmployeeTableSection({
       const previousPageSnapshot =
         queryClient.getQueryData<PaginatedResponse<Employee>>(queryKey);
 
-      // Optimistically update the edited employee in the table cache immediately
       if (modalMode === 'edit' && editingEmployee && previousPageSnapshot) {
         const optimisticRecord: Employee = {
           ...editingEmployee,
@@ -407,7 +408,6 @@ export function EmployeeTableSection({
       onDataMutated?.();
     },
     onError: (err: unknown, _variables, context) => {
-      // Deterministic Rollback: restore the exact pre-mutation cache snapshot so no stale optimistic data remains
       if (context?.previousPageSnapshot) {
         queryClient.setQueryData<PaginatedResponse<Employee>>(
           queryKey,
@@ -423,7 +423,6 @@ export function EmployeeTableSection({
         if (err.status === 409 && err.code === 'VERSION_CONFLICT' && err.conflictDetails) {
           setConflictDetails(err.conflictDetails);
           setModalError(err.message);
-          // Also sync the table row to the latest authoritative server record from the 409 payload
           const authoritativeServerRecord = err.conflictDetails.serverRecord;
           queryClient.setQueryData<PaginatedResponse<Employee>>(queryKey, (oldData) => {
             if (!oldData) return oldData;
@@ -447,7 +446,6 @@ export function EmployeeTableSection({
     },
   });
 
-  // Store mutation functions in refs so row callbacks have [] dependencies and never change reference
   const deleteRowMutateRef = useRef(deleteRowMutation.mutate);
   deleteRowMutateRef.current = deleteRowMutation.mutate;
 
@@ -619,6 +617,18 @@ export function EmployeeTableSection({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {allowCsvImport ? (
+            <button
+              type="button"
+              data-testid="open-csv-wizard-btn"
+              onClick={() => setIsCsvWizardOpen(true)}
+              className="inline-flex items-center gap-1.5 rounded-md border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-800 hover:bg-slate-50"
+            >
+              <FileSpreadsheet className="h-4 w-4" aria-hidden="true" />
+              Bulk CSV Import
+            </button>
+          ) : null}
+
           <button
             type="button"
             data-testid="race-demo-asad-rahul-btn"
@@ -633,7 +643,7 @@ export function EmployeeTableSection({
             type="button"
             data-testid="arm-table-error-btn"
             onClick={armNextPageFailure}
-            className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100"
+            className="inline-flex items-center gap-1.5 rounded-md border border-amber-300 bg-amber-50 px-3.5 py-1.5 text-xs font-semibold text-amber-900 hover:bg-amber-100"
           >
             <AlertOctagon className="h-3.5 w-3.5" aria-hidden="true" />
             Fail Next Table Request
@@ -1098,6 +1108,17 @@ export function EmployeeTableSection({
             expectedVersionOverride: options?.expectedVersionOverride,
             idempotencyKey: options?.idempotencyKey,
           });
+        }}
+      />
+
+      <CsvImportWizard
+        isOpen={isCsvWizardOpen}
+        onClose={() => setIsCsvWizardOpen(false)}
+        onImportComplete={() => {
+          void queryClient.invalidateQueries({
+            queryKey: ['tenant', activeOrgId],
+          });
+          onDataMutated?.();
         }}
       />
     </section>

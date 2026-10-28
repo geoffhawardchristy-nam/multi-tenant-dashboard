@@ -29,9 +29,11 @@ export class MockDatabase {
   private sessions: Map<string, SessionRecord> = new Map();
   private baseSeededEmployees: Map<string, Employee> = new Map();
   private employees: Map<string, Employee> = new Map();
+  private emailIndexByOrg: Map<string, Map<string, Employee>> = new Map();
   private upsertedEmployees: Map<string, Employee> = new Map();
   private deletedEmployeeIds: Set<string> = new Set();
   private lastSyncedDeltasRaw: string | null = null;
+  private nextEmployeeSequence = 10201;
   private mutationIdempotencyCache: Map<string, unknown> = new Map();
   private csvImportJobs: Map<string, CsvImportJob> = new Map();
 
@@ -39,6 +41,30 @@ export class MockDatabase {
     this.initializeData(seedCount);
     this.hydrateSessionsFromStorage();
     this.syncEmployeesFromStorage(true);
+  }
+
+  private rebuildEmailIndex(): void {
+    this.emailIndexByOrg.clear();
+    for (const org of this.organizations.keys()) {
+      this.emailIndexByOrg.set(org, new Map());
+    }
+    for (const emp of this.employees.values()) {
+      let orgMap = this.emailIndexByOrg.get(emp.organizationId);
+      if (!orgMap) {
+        orgMap = new Map();
+        this.emailIndexByOrg.set(emp.organizationId, orgMap);
+      }
+      orgMap.set(emp.email.toLowerCase(), emp);
+    }
+  }
+
+  private indexSingleEmployee(emp: Employee): void {
+    let orgMap = this.emailIndexByOrg.get(emp.organizationId);
+    if (!orgMap) {
+      orgMap = new Map();
+      this.emailIndexByOrg.set(emp.organizationId, orgMap);
+    }
+    orgMap.set(emp.email.toLowerCase(), emp);
   }
 
   private initializeData(seedCount: number): void {
@@ -65,6 +91,8 @@ export class MockDatabase {
       this.baseSeededEmployees.set(emp.id, emp);
       this.employees.set(emp.id, emp);
     }
+    this.nextEmployeeSequence = seedCount + 1;
+    this.rebuildEmailIndex();
   }
 
   private hydrateSessionsFromStorage(): void {
@@ -102,10 +130,6 @@ export class MockDatabase {
     }
   }
 
-  /**
-   * Synchronizes in-memory employee map with shared localStorage deltas so mutations
-   * performed in Tab A are immediately visible to API requests in Tab B.
-   */
   private syncEmployeesFromStorage(force = false): void {
     if (typeof window === 'undefined') {
       return;
@@ -121,25 +145,24 @@ export class MockDatabase {
       this.upsertedEmployees.clear();
       this.deletedEmployeeIds.clear();
 
-      if (!raw) {
-        return;
-      }
-
-      const parsed = JSON.parse(raw) as EmployeeMutationDeltas;
-      if (parsed && Array.isArray(parsed.deletedIds)) {
-        for (const id of parsed.deletedIds) {
-          this.deletedEmployeeIds.add(id);
-          this.employees.delete(id);
+      if (raw) {
+        const parsed = JSON.parse(raw) as EmployeeMutationDeltas;
+        if (parsed && Array.isArray(parsed.deletedIds)) {
+          for (const id of parsed.deletedIds) {
+            this.deletedEmployeeIds.add(id);
+            this.employees.delete(id);
+          }
         }
-      }
-      if (parsed && Array.isArray(parsed.upserted)) {
-        for (const emp of parsed.upserted) {
-          if (emp && typeof emp.id === 'string') {
-            this.upsertedEmployees.set(emp.id, emp);
-            this.employees.set(emp.id, emp);
+        if (parsed && Array.isArray(parsed.upserted)) {
+          for (const emp of parsed.upserted) {
+            if (emp && typeof emp.id === 'string') {
+              this.upsertedEmployees.set(emp.id, emp);
+              this.employees.set(emp.id, emp);
+            }
           }
         }
       }
+      this.rebuildEmailIndex();
     } catch {
       // Ignore malformed delta data
     }
@@ -150,6 +173,11 @@ export class MockDatabase {
       return;
     }
     try {
+      // To prevent 5MB localStorage quota overflow when importing 10,000 rows in bulk,
+      // only persist deltas to localStorage when upserted size is within safe storage bounds (<= 1,500)
+      if (this.upsertedEmployees.size > 1500) {
+        return;
+      }
       const deltas: EmployeeMutationDeltas = {
         upserted: Array.from(this.upsertedEmployees.values()),
         deletedIds: Array.from(this.deletedEmployeeIds.values()),
@@ -158,7 +186,7 @@ export class MockDatabase {
       this.lastSyncedDeltasRaw = raw;
       window.localStorage.setItem(MOCK_SERVER_EMPLOYEE_DELTAS_KEY, raw);
     } catch {
-      // Ignore storage quota errors
+      // Ignore storage quota errors during 10,000-row stress tests
     }
   }
 
@@ -305,29 +333,43 @@ export class MockDatabase {
   public findEmployeeByEmailInOrg(organizationId: string, email: string): Employee | undefined {
     this.syncEmployeesFromStorage();
     const normalized = email.trim().toLowerCase();
-    for (const emp of this.employees.values()) {
-      if (
-        emp.organizationId === organizationId &&
-        emp.email.toLowerCase() === normalized
-      ) {
-        return emp;
-      }
-    }
-    return undefined;
+    return this.emailIndexByOrg.get(organizationId)?.get(normalized);
   }
 
   public setEmployee(employee: Employee): void {
     this.syncEmployeesFromStorage();
+    const previous = this.employees.get(employee.id);
+    if (previous && previous.email.toLowerCase() !== employee.email.toLowerCase()) {
+      this.emailIndexByOrg.get(previous.organizationId)?.delete(previous.email.toLowerCase());
+    }
     this.employees.set(employee.id, employee);
+    this.indexSingleEmployee(employee);
     this.deletedEmployeeIds.delete(employee.id);
     this.upsertedEmployees.set(employee.id, employee);
     this.persistEmployeeDeltasToStorage();
   }
 
+  /**
+   * High-speed O(N) batch insert for 10,000-row CSV imports so localStorage is not
+   * serialized on every individual row.
+   */
+  public setEmployeesBulk(newEmployees: ReadonlyArray<Employee>): void {
+    this.syncEmployeesFromStorage();
+    for (const employee of newEmployees) {
+      this.employees.set(employee.id, employee);
+      this.indexSingleEmployee(employee);
+      this.deletedEmployeeIds.delete(employee.id);
+      this.upsertedEmployees.set(employee.id, employee);
+    }
+    this.persistEmployeeDeltasToStorage();
+  }
+
   public deleteEmployee(employeeId: string): boolean {
     this.syncEmployeesFromStorage();
+    const existing = this.employees.get(employeeId);
     const existed = this.employees.delete(employeeId);
-    if (existed) {
+    if (existed && existing) {
+      this.emailIndexByOrg.get(existing.organizationId)?.delete(existing.email.toLowerCase());
       this.upsertedEmployees.delete(employeeId);
       this.deletedEmployeeIds.add(employeeId);
       this.persistEmployeeDeltasToStorage();
@@ -336,15 +378,15 @@ export class MockDatabase {
   }
 
   public generateNextEmployeeId(): string {
-    this.syncEmployeesFromStorage();
-    let maxNumeric = this.employees.size + this.deletedEmployeeIds.size + 1;
     while (
-      this.employees.has(`emp-${String(maxNumeric).padStart(5, '0')}`) ||
-      this.deletedEmployeeIds.has(`emp-${String(maxNumeric).padStart(5, '0')}`)
+      this.employees.has(`emp-${String(this.nextEmployeeSequence).padStart(5, '0')}`) ||
+      this.deletedEmployeeIds.has(`emp-${String(this.nextEmployeeSequence).padStart(5, '0')}`)
     ) {
-      maxNumeric += 1;
+      this.nextEmployeeSequence += 1;
     }
-    return `emp-${String(maxNumeric).padStart(5, '0')}`;
+    const id = `emp-${String(this.nextEmployeeSequence).padStart(5, '0')}`;
+    this.nextEmployeeSequence += 1;
+    return id;
   }
 
   public getTotalEmployeeCount(): number {
