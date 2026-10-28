@@ -1,9 +1,10 @@
 'use client';
 
-import React, { useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import React, { useEffect, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { ShieldAlert, FileSpreadsheet, Plus, Trash2, CheckCircle2 } from 'lucide-react';
 import { mockAuthApi } from '@/lib/mock-api/auth-api';
+import { MOCK_SERVER_EMPLOYEE_DELTAS_KEY } from '@/lib/mock-api/db';
 import { isMockApiError } from '@/lib/mock-api/errors';
 import {
   ErrorStateView,
@@ -25,6 +26,7 @@ export function WorkspaceGuard(): React.JSX.Element {
     checkPermission,
   } = useAuth();
   const { banner, clearBanner, showBanner } = useUiStore();
+  const queryClient = useQueryClient();
 
   const [probeResult, setProbeResult] = useState<{
     readonly status: 'idle' | 'blocked' | 'allowed';
@@ -35,6 +37,23 @@ export function WorkspaceGuard(): React.JSX.Element {
 
   const activeOrgId = session?.activeOrganization.id ?? '';
   const sessionToken = session?.token ?? '';
+
+  // Cross-tab synchronization: when another browser tab mutates employees in localStorage,
+  // automatically invalidate active tenant queries so the table and metrics stay in sync!
+  useEffect(() => {
+    if (typeof window === 'undefined' || !activeOrgId) {
+      return;
+    }
+    const handleCrossTabStorageChange = (event: StorageEvent) => {
+      if (event.key === MOCK_SERVER_EMPLOYEE_DELTAS_KEY) {
+        void queryClient.invalidateQueries({
+          queryKey: ['tenant', activeOrgId],
+        });
+      }
+    };
+    window.addEventListener('storage', handleCrossTabStorageChange);
+    return () => window.removeEventListener('storage', handleCrossTabStorageChange);
+  }, [activeOrgId, queryClient]);
 
   const overviewQuery = useQuery({
     queryKey: ['tenant', activeOrgId, 'overview'],
@@ -298,14 +317,12 @@ export function WorkspaceGuard(): React.JSX.Element {
           </section>
         ) : null}
 
-        {/* Module B: Full 10,000+ Record Employee Management Table */}
         <EmployeeTableSection
           onDataMutated={() => {
             void overviewQuery.refetch();
           }}
         />
 
-        {/* Backend Authorization & Tampered Request Verifier */}
         <section
           aria-labelledby="security-verifier-heading"
           className="rounded-xl border border-slate-200 bg-white p-6 shadow-sm"
@@ -380,7 +397,7 @@ export function WorkspaceGuard(): React.JSX.Element {
               <div className="flex items-center gap-2 font-semibold">
                 {probeResult.status === 'blocked' ? (
                   <span>
-                    Rejected by Mock API Boundary HTTP {probeResult.httpStatus} (
+                    Rejected by Mock API Boundary â€” HTTP {probeResult.httpStatus} (
                     {probeResult.code})
                   </span>
                 ) : (

@@ -15,8 +15,8 @@ import {
   type MockCredentialAccount,
 } from './seed';
 
-const MOCK_SERVER_SESSIONS_STORAGE_KEY = 'nexus_mock_server_db_sessions_v1';
-const MOCK_SERVER_EMPLOYEE_DELTAS_KEY = 'nexus_mock_server_db_deltas_v1';
+export const MOCK_SERVER_SESSIONS_STORAGE_KEY = 'nexus_mock_server_db_sessions_v1';
+export const MOCK_SERVER_EMPLOYEE_DELTAS_KEY = 'nexus_mock_server_db_deltas_v1';
 
 interface EmployeeMutationDeltas {
   readonly upserted: ReadonlyArray<Employee>;
@@ -27,24 +27,28 @@ export class MockDatabase {
   private organizations: Map<string, Organization> = new Map();
   private accounts: Map<string, MockCredentialAccount> = new Map();
   private sessions: Map<string, SessionRecord> = new Map();
+  private baseSeededEmployees: Map<string, Employee> = new Map();
   private employees: Map<string, Employee> = new Map();
   private upsertedEmployees: Map<string, Employee> = new Map();
   private deletedEmployeeIds: Set<string> = new Set();
+  private lastSyncedDeltasRaw: string | null = null;
   private mutationIdempotencyCache: Map<string, unknown> = new Map();
   private csvImportJobs: Map<string, CsvImportJob> = new Map();
 
   constructor(seedCount: number = env.NEXT_PUBLIC_DEFAULT_SEED_COUNT) {
     this.initializeData(seedCount);
     this.hydrateSessionsFromStorage();
-    this.hydrateEmployeeDeltasFromStorage();
+    this.syncEmployeesFromStorage(true);
   }
 
   private initializeData(seedCount: number): void {
     this.organizations.clear();
     this.accounts.clear();
+    this.baseSeededEmployees.clear();
     this.employees.clear();
     this.upsertedEmployees.clear();
     this.deletedEmployeeIds.clear();
+    this.lastSyncedDeltasRaw = null;
     this.mutationIdempotencyCache.clear();
     this.csvImportJobs.clear();
 
@@ -58,6 +62,7 @@ export class MockDatabase {
 
     const seededEmployees = generateSeedEmployees(seedCount);
     for (const emp of seededEmployees) {
+      this.baseSeededEmployees.set(emp.id, emp);
       this.employees.set(emp.id, emp);
     }
   }
@@ -67,12 +72,13 @@ export class MockDatabase {
       return;
     }
     try {
-      const raw = window.sessionStorage.getItem(MOCK_SERVER_SESSIONS_STORAGE_KEY);
+      const raw = window.localStorage.getItem(MOCK_SERVER_SESSIONS_STORAGE_KEY);
       if (!raw) {
         return;
       }
       const parsed = JSON.parse(raw) as ReadonlyArray<SessionRecord>;
       if (Array.isArray(parsed)) {
+        this.sessions.clear();
         for (const record of parsed) {
           if (record && typeof record.token === 'string') {
             this.sessions.set(record.token, record);
@@ -90,21 +96,35 @@ export class MockDatabase {
     }
     try {
       const serialized = JSON.stringify(Array.from(this.sessions.values()));
-      window.sessionStorage.setItem(MOCK_SERVER_SESSIONS_STORAGE_KEY, serialized);
+      window.localStorage.setItem(MOCK_SERVER_SESSIONS_STORAGE_KEY, serialized);
     } catch {
       // Ignore storage quota errors
     }
   }
 
-  private hydrateEmployeeDeltasFromStorage(): void {
+  /**
+   * Synchronizes in-memory employee map with shared localStorage deltas so mutations
+   * performed in Tab A are immediately visible to API requests in Tab B.
+   */
+  private syncEmployeesFromStorage(force = false): void {
     if (typeof window === 'undefined') {
       return;
     }
     try {
-      const raw = window.sessionStorage.getItem(MOCK_SERVER_EMPLOYEE_DELTAS_KEY);
+      const raw = window.localStorage.getItem(MOCK_SERVER_EMPLOYEE_DELTAS_KEY);
+      if (!force && raw === this.lastSyncedDeltasRaw) {
+        return;
+      }
+      this.lastSyncedDeltasRaw = raw;
+
+      this.employees = new Map(this.baseSeededEmployees);
+      this.upsertedEmployees.clear();
+      this.deletedEmployeeIds.clear();
+
       if (!raw) {
         return;
       }
+
       const parsed = JSON.parse(raw) as EmployeeMutationDeltas;
       if (parsed && Array.isArray(parsed.deletedIds)) {
         for (const id of parsed.deletedIds) {
@@ -134,7 +154,9 @@ export class MockDatabase {
         upserted: Array.from(this.upsertedEmployees.values()),
         deletedIds: Array.from(this.deletedEmployeeIds.values()),
       };
-      window.sessionStorage.setItem(MOCK_SERVER_EMPLOYEE_DELTAS_KEY, JSON.stringify(deltas));
+      const raw = JSON.stringify(deltas);
+      this.lastSyncedDeltasRaw = raw;
+      window.localStorage.setItem(MOCK_SERVER_EMPLOYEE_DELTAS_KEY, raw);
     } catch {
       // Ignore storage quota errors
     }
@@ -145,6 +167,8 @@ export class MockDatabase {
     if (typeof window !== 'undefined') {
       window.sessionStorage.removeItem(MOCK_SERVER_SESSIONS_STORAGE_KEY);
       window.sessionStorage.removeItem(MOCK_SERVER_EMPLOYEE_DELTAS_KEY);
+      window.localStorage.removeItem(MOCK_SERVER_SESSIONS_STORAGE_KEY);
+      window.localStorage.removeItem(MOCK_SERVER_EMPLOYEE_DELTAS_KEY);
     }
     this.initializeData(seedCount);
   }
@@ -168,9 +192,7 @@ export class MockDatabase {
   }
 
   public getSession(token: string): SessionRecord | undefined {
-    if (!this.sessions.has(token)) {
-      this.hydrateSessionsFromStorage();
-    }
+    this.hydrateSessionsFromStorage();
     return this.sessions.get(token);
   }
 
@@ -265,6 +287,7 @@ export class MockDatabase {
   }
 
   public getEmployeesByOrganization(organizationId: string): Employee[] {
+    this.syncEmployeesFromStorage();
     const result: Employee[] = [];
     for (const emp of this.employees.values()) {
       if (emp.organizationId === organizationId) {
@@ -275,10 +298,12 @@ export class MockDatabase {
   }
 
   public getEmployeeById(employeeId: string): Employee | undefined {
+    this.syncEmployeesFromStorage();
     return this.employees.get(employeeId);
   }
 
   public findEmployeeByEmailInOrg(organizationId: string, email: string): Employee | undefined {
+    this.syncEmployeesFromStorage();
     const normalized = email.trim().toLowerCase();
     for (const emp of this.employees.values()) {
       if (
@@ -292,6 +317,7 @@ export class MockDatabase {
   }
 
   public setEmployee(employee: Employee): void {
+    this.syncEmployeesFromStorage();
     this.employees.set(employee.id, employee);
     this.deletedEmployeeIds.delete(employee.id);
     this.upsertedEmployees.set(employee.id, employee);
@@ -299,6 +325,7 @@ export class MockDatabase {
   }
 
   public deleteEmployee(employeeId: string): boolean {
+    this.syncEmployeesFromStorage();
     const existed = this.employees.delete(employeeId);
     if (existed) {
       this.upsertedEmployees.delete(employeeId);
@@ -309,6 +336,7 @@ export class MockDatabase {
   }
 
   public generateNextEmployeeId(): string {
+    this.syncEmployeesFromStorage();
     let maxNumeric = this.employees.size + this.deletedEmployeeIds.size + 1;
     while (
       this.employees.has(`emp-${String(maxNumeric).padStart(5, '0')}`) ||
@@ -320,6 +348,7 @@ export class MockDatabase {
   }
 
   public getTotalEmployeeCount(): number {
+    this.syncEmployeesFromStorage();
     return this.employees.size;
   }
 

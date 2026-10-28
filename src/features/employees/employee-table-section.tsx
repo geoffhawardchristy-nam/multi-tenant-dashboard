@@ -20,7 +20,7 @@ import {
 } from '@/lib/mock-api/employees-api';
 import { mockApiEngine } from '@/lib/mock-api/engine';
 import { isMockApiError } from '@/lib/mock-api/errors';
-import type { PaginatedResponse, SortField } from '@/types/api';
+import type { ConflictErrorDetails, PaginatedResponse, SortField } from '@/types/api';
 import type {
   Employee,
   EmployeeDepartment,
@@ -77,6 +77,12 @@ export interface EmployeeTableSectionProps {
   readonly onDataMutated?: () => void;
 }
 
+interface SaveModalVariables {
+  readonly values: EmployeeFormValues;
+  readonly expectedVersionOverride?: number;
+  readonly idempotencyKey?: string;
+}
+
 export function EmployeeTableSection({
   onDataMutated,
 }: EmployeeTableSectionProps): React.JSX.Element {
@@ -112,11 +118,15 @@ export function EmployeeTableSection({
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set());
   const [mutatingRowIds, setMutatingRowIds] = useState<ReadonlySet<string>>(() => new Set());
 
-  // Modal state for Create / Edit
+  // Modal state for Create / Edit / Conflict Resolution
   const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
   const [modalError, setModalError] = useState<string | null>(null);
+  const [modalFieldErrors, setModalFieldErrors] = useState<
+    Readonly<Record<string, string>> | undefined
+  >(undefined);
+  const [conflictDetails, setConflictDetails] = useState<ConflictErrorDetails | null>(null);
 
   const activeOrgId = session?.activeOrganization.id ?? '';
   const sessionToken = session?.token ?? '';
@@ -315,14 +325,21 @@ export function EmployeeTableSection({
     },
   });
 
-  const saveModalMutation = useMutation({
-    mutationFn: async (values: EmployeeFormValues) => {
+  const saveModalMutation = useMutation<
+    Employee,
+    unknown,
+    SaveModalVariables,
+    { previousPageSnapshot: PaginatedResponse<Employee> | undefined }
+  >({
+    mutationFn: async ({ values, expectedVersionOverride, idempotencyKey }) => {
       if (modalMode === 'create') {
-        const idempotencyKey = `create_${activeOrgId}_${values.email.toLowerCase()}_${Date.now()}`;
+        const key =
+          idempotencyKey ??
+          `create_${activeOrgId}_${values.email.toLowerCase()}_${Date.now()}`;
         return mockEmployeesApi.create({
           token: sessionToken,
           organizationId: activeOrgId,
-          idempotencyKey,
+          idempotencyKey: key,
           ...values,
         });
       }
@@ -333,13 +350,43 @@ export function EmployeeTableSection({
         token: sessionToken,
         organizationId: activeOrgId,
         employeeId: editingEmployee.id,
-        expectedVersion: editingEmployee.version,
+        expectedVersion: expectedVersionOverride ?? editingEmployee.version,
         ...values,
       });
+    },
+    onMutate: async ({ values }) => {
+      setModalError(null);
+      setModalFieldErrors(undefined);
+
+      await queryClient.cancelQueries({ queryKey });
+      const previousPageSnapshot =
+        queryClient.getQueryData<PaginatedResponse<Employee>>(queryKey);
+
+      // Optimistically update the edited employee in the table cache immediately
+      if (modalMode === 'edit' && editingEmployee && previousPageSnapshot) {
+        const optimisticRecord: Employee = {
+          ...editingEmployee,
+          ...values,
+          fullName: `${values.firstName.trim()} ${values.lastName.trim()}`,
+          updatedAt: new Date().toISOString(),
+        };
+
+        queryClient.setQueryData<PaginatedResponse<Employee>>(queryKey, {
+          ...previousPageSnapshot,
+          items: previousPageSnapshot.items.map((item) =>
+            item.id === editingEmployee.id ? optimisticRecord : item
+          ),
+        });
+      }
+
+      return { previousPageSnapshot };
     },
     onSuccess: (savedEmployee) => {
       setIsModalOpen(false);
       setModalError(null);
+      setModalFieldErrors(undefined);
+      setConflictDetails(null);
+
       if (modalMode === 'edit') {
         queryClient.setQueryData<PaginatedResponse<Employee>>(queryKey, (oldData) => {
           if (!oldData) return oldData;
@@ -359,9 +406,43 @@ export function EmployeeTableSection({
       }
       onDataMutated?.();
     },
-    onError: (err: unknown) => {
-      if (!handleUnauthorizedError(err)) {
-        setModalError(isMockApiError(err) ? err.message : 'Failed to save employee.');
+    onError: (err: unknown, _variables, context) => {
+      // Deterministic Rollback: restore the exact pre-mutation cache snapshot so no stale optimistic data remains
+      if (context?.previousPageSnapshot) {
+        queryClient.setQueryData<PaginatedResponse<Employee>>(
+          queryKey,
+          context.previousPageSnapshot
+        );
+      }
+
+      if (handleUnauthorizedError(err)) {
+        return;
+      }
+
+      if (isMockApiError(err)) {
+        if (err.status === 409 && err.code === 'VERSION_CONFLICT' && err.conflictDetails) {
+          setConflictDetails(err.conflictDetails);
+          setModalError(err.message);
+          // Also sync the table row to the latest authoritative server record from the 409 payload
+          const authoritativeServerRecord = err.conflictDetails.serverRecord;
+          queryClient.setQueryData<PaginatedResponse<Employee>>(queryKey, (oldData) => {
+            if (!oldData) return oldData;
+            return {
+              ...oldData,
+              items: oldData.items.map((item) =>
+                item.id === authoritativeServerRecord.id ? authoritativeServerRecord : item
+              ),
+            };
+          });
+          return;
+        }
+
+        if (err.fieldErrors) {
+          setModalFieldErrors(err.fieldErrors);
+        }
+        setModalError(err.message);
+      } else {
+        setModalError('Failed to save employee.');
       }
     },
   });
@@ -389,6 +470,8 @@ export function EmployeeTableSection({
     setModalMode('edit');
     setEditingEmployee(employee);
     setModalError(null);
+    setModalFieldErrors(undefined);
+    setConflictDetails(null);
     setIsModalOpen(true);
   }, []);
 
@@ -399,6 +482,41 @@ export function EmployeeTableSection({
   const handleQuickToggleStatus = useCallback((employee: Employee) => {
     quickToggleMutateRef.current(employee);
   }, []);
+
+  const handleSimulateConcurrentAdminEdit = useCallback(
+    async (employee: Employee): Promise<Employee> => {
+      const currentOnServer = await mockEmployeesApi.update({
+        token: sessionToken,
+        organizationId: activeOrgId,
+        employeeId: employee.id,
+        expectedVersion: employee.version,
+        firstName: employee.firstName,
+        lastName: employee.lastName,
+        email: employee.email,
+        department: employee.department === 'Security' ? 'Product' : 'Security',
+        roleTitle: employee.roleTitle,
+        status: employee.status,
+        salaryUsd: employee.salaryUsd + 15000,
+        hireDate: employee.hireDate,
+      });
+      return currentOnServer;
+    },
+    [activeOrgId, sessionToken]
+  );
+
+  const handleArmNextSaveFailure = useCallback(() => {
+    mockApiEngine.enqueueFailureRule({
+      id: `save-fail-once-${Date.now()}`,
+      endpointPattern: 'employees.update',
+      failureType: 'HTTP_500',
+      remainingTriggers: 1,
+      delayMs: 80,
+    });
+    showBanner(
+      'warning',
+      'Armed HTTP 500 failure for the next Save Changes action. Submitting will optimistically update the row, then roll back while keeping your form input intact.'
+    );
+  }, [showBanner]);
 
   const handleSortColumn = (field: SortField) => {
     updateUrlState((prev) => {
@@ -529,6 +647,8 @@ export function EmployeeTableSection({
                 setModalMode('create');
                 setEditingEmployee(null);
                 setModalError(null);
+                setModalFieldErrors(undefined);
+                setConflictDetails(null);
                 setIsModalOpen(true);
               }}
               className="inline-flex items-center gap-1.5 rounded-md bg-slate-900 px-3.5 py-2 text-xs font-semibold text-white hover:bg-slate-800"
@@ -955,11 +1075,29 @@ export function EmployeeTableSection({
         isOpen={isModalOpen}
         mode={modalMode}
         initialEmployee={editingEmployee}
+        canMutate={canMutate}
         isSubmitting={saveModalMutation.isPending}
         errorMessage={modalError}
-        onClose={() => setIsModalOpen(false)}
-        onSubmit={async (values) => {
-          await saveModalMutation.mutateAsync(values);
+        fieldErrors={modalFieldErrors}
+        conflictDetails={conflictDetails}
+        onClose={() => {
+          setIsModalOpen(false);
+          setConflictDetails(null);
+          setModalError(null);
+          setModalFieldErrors(undefined);
+        }}
+        onClearConflict={() => {
+          setConflictDetails(null);
+          setModalError(null);
+        }}
+        onSimulateConcurrentAdminEdit={handleSimulateConcurrentAdminEdit}
+        onArmNextSaveFailure={handleArmNextSaveFailure}
+        onSubmit={async (values, options) => {
+          await saveModalMutation.mutateAsync({
+            values,
+            expectedVersionOverride: options?.expectedVersionOverride,
+            idempotencyKey: options?.idempotencyKey,
+          });
         }}
       />
     </section>

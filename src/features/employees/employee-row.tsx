@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useRef } from 'react';
-import { Edit2, Trash2, RefreshCw } from 'lucide-react';
+import { Edit2, Eye, Trash2, RefreshCw } from 'lucide-react';
 import type { Employee, EmployeeStatus } from '@/types/domain';
 
 export interface EmployeeTableRowProps {
@@ -65,7 +65,12 @@ function EmployeeTableRowComponent({
 
       <td className="px-4 py-3 font-mono text-xs text-slate-600">{employee.email}</td>
 
-      <td className="px-4 py-3 text-xs font-medium text-slate-700">{employee.department}</td>
+      <td
+        data-testid={`row-dept-${employee.id}`}
+        className="px-4 py-3 text-xs font-medium text-slate-700"
+      >
+        {employee.department}
+      </td>
 
       <td className="px-4 py-3 text-xs text-slate-700">{employee.roleTitle}</td>
 
@@ -80,7 +85,10 @@ function EmployeeTableRowComponent({
         </span>
       </td>
 
-      <td className="px-4 py-3 font-mono text-xs text-slate-700">
+      <td
+        data-testid={`row-salary-${employee.id}`}
+        className="px-4 py-3 font-mono text-xs text-slate-700"
+      >
         ${employee.salaryUsd.toLocaleString()}
       </td>
 
@@ -126,7 +134,15 @@ function EmployeeTableRowComponent({
             </button>
           </div>
         ) : (
-          <span className="font-mono text-[11px] text-slate-400">Read-Only</span>
+          <button
+            type="button"
+            data-testid={`inspect-row-btn-${employee.id}`}
+            onClick={() => onEdit(employee)}
+            className="inline-flex items-center gap-1 rounded border border-slate-200 bg-slate-50 px-2 py-1 font-mono text-[11px] font-medium text-slate-600 hover:bg-slate-100"
+          >
+            <Eye className="h-3 w-3" aria-hidden="true" />
+            Inspect
+          </button>
         )}
       </td>
     </tr>
@@ -138,6 +154,10 @@ export const EmployeeTableRow = React.memo(EmployeeTableRowComponent, (prev, nex
     prev.employee.id === next.employee.id &&
     prev.employee.version === next.employee.version &&
     prev.employee.updatedAt === next.employee.updatedAt &&
+    prev.employee.fullName === next.employee.fullName &&
+    prev.employee.department === next.employee.department &&
+    prev.employee.salaryUsd === next.employee.salaryUsd &&
+    prev.employee.status === next.employee.status &&
     prev.isSelected === next.isSelected &&
     prev.canMutate === next.canMutate &&
     prev.isRowMutating === next.isRowMutating &&
