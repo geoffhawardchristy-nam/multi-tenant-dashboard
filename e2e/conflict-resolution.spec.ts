@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test.describe('Module C â€” Concurrent Editing & HTTP 409 Conflict Resolution E2E', () => {
+test.describe('Module C Concurrent Editing & HTTP 409 Conflict Resolution E2E', () => {
   test('Two administrators encounter an HTTP 409 version conflict and resolve it to v3', async ({
     page,
   }) => {

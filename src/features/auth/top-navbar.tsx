@@ -1,8 +1,10 @@
 'use client';
 
-import React from 'react';
-import { Building2, Clock, LogOut, ShieldCheck } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Activity, Building2, Clock, LogOut, ShieldCheck, WifiOff } from 'lucide-react';
 import { env } from '@/config/env';
+import { mockApiEngine, type MockEngineSnapshot } from '@/lib/mock-api/engine';
+import { useUiStore } from '@/store/ui-store';
 import { useAuth } from './auth-context';
 import { canSwitchOrganization, getRoleBadgeInfo } from './permissions';
 
@@ -14,6 +16,18 @@ export function TopNavbar(): React.JSX.Element | null {
     simulateSessionExpiry,
     logout,
   } = useAuth();
+  const { setChaosDrawerOpen } = useUiStore();
+
+  const [engineSnapshot, setEngineSnapshot] = useState<MockEngineSnapshot>(() =>
+    mockApiEngine.getSnapshot()
+  );
+
+  useEffect(() => {
+    setEngineSnapshot(mockApiEngine.getSnapshot());
+    return mockApiEngine.subscribe(() => {
+      setEngineSnapshot(mockApiEngine.getSnapshot());
+    });
+  }, []);
 
   if (!session) {
     return null;
@@ -22,6 +36,7 @@ export function TopNavbar(): React.JSX.Element | null {
   const { user, activeOrganization, availableOrganizations } = session;
   const roleBadge = getRoleBadgeInfo(user.role);
   const allowOrgSwitch = canSwitchOrganization(user.role);
+  const activeRuleCount = engineSnapshot.failureRules.length;
 
   return (
     <header className="border-b border-slate-200 bg-white shadow-sm">
@@ -41,6 +56,15 @@ export function TopNavbar(): React.JSX.Element | null {
               >
                 {roleBadge.label}
               </span>
+              {engineSnapshot.isOffline ? (
+                <span
+                  data-testid="navbar-offline-badge"
+                  className="inline-flex items-center gap-1 rounded bg-red-600 px-2 py-0.5 text-[11px] font-bold text-white"
+                >
+                  <WifiOff className="h-3 w-3" aria-hidden="true" />
+                  OFFLINE
+                </span>
+              ) : null}
             </div>
             <p className="text-xs text-slate-500" data-testid="authenticated-user-summary">
               Signed in as <strong className="text-slate-700">{user.name}</strong> ({user.email})
@@ -48,7 +72,7 @@ export function TopNavbar(): React.JSX.Element | null {
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2.5">
           <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 px-3 py-1.5">
             <Building2 className="h-4 w-4 text-slate-600" aria-hidden="true" />
             {allowOrgSwitch ? (
@@ -89,6 +113,28 @@ export function TopNavbar(): React.JSX.Element | null {
               </div>
             )}
           </div>
+
+          <button
+            type="button"
+            data-testid="open-chaos-drawer-btn"
+            onClick={() => setChaosDrawerOpen(true)}
+            className={`inline-flex items-center gap-1.5 rounded-md border px-3 py-1.5 text-xs font-semibold ${
+              engineSnapshot.isOffline || activeRuleCount > 0
+                ? 'border-red-300 bg-red-50 text-red-900 hover:bg-red-100'
+                : 'border-purple-300 bg-purple-50 text-purple-900 hover:bg-purple-100'
+            }`}
+          >
+            <Activity className="h-3.5 w-3.5" aria-hidden="true" />
+            Chaos &amp; Resilience
+            {activeRuleCount > 0 ? (
+              <span
+                data-testid="chaos-active-count-badge"
+                className="rounded-full bg-red-700 px-1.5 py-0.2 font-mono text-[10px] text-white"
+              >
+                {activeRuleCount}
+              </span>
+            ) : null}
+          </button>
 
           <button
             type="button"

@@ -106,7 +106,7 @@ export function EmployeeQuickModal({
       setBaseVersion(1);
       reset(DEFAULT_CREATE_VALUES);
     }
-  }, [initialEmployee?.id, isOpen, mode, reset]);
+  }, [initialEmployee, isOpen, mode, reset]);
 
   // Apply backend field-level errors (such as duplicate email) onto React Hook Form fields
   useEffect(() => {
@@ -160,6 +160,7 @@ export function EmployeeQuickModal({
   };
 
   const onValidSubmit = async (values: EmployeeFormValues) => {
+    debugger
     if (!canMutate || isSubmitting || inFlightSubmitRef.current) {
       return;
     }

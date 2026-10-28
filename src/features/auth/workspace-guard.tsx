@@ -11,6 +11,8 @@ import {
   LoadingSkeleton,
   StatusBanner,
 } from '@/components/feedback/state-views';
+import { ComponentErrorBoundary } from '@/components/feedback/error-boundary';
+import { ChaosControlDrawer } from '@/features/chaos/chaos-control-drawer';
 import { useUiStore } from '@/store/ui-store';
 import { EmployeeTableSection } from '@/features/employees/employee-table-section';
 import { useAuth } from './auth-context';
@@ -38,6 +40,7 @@ export function WorkspaceGuard(): React.JSX.Element {
   const activeOrgId = session?.activeOrganization.id ?? '';
   const sessionToken = session?.token ?? '';
 
+  // 1. Cross-Tab Storage Synchronization
   useEffect(() => {
     if (typeof window === 'undefined' || !activeOrgId) {
       return;
@@ -52,6 +55,37 @@ export function WorkspaceGuard(): React.JSX.Element {
     window.addEventListener('storage', handleCrossTabStorageChange);
     return () => window.removeEventListener('storage', handleCrossTabStorageChange);
   }, [activeOrgId, queryClient]);
+
+  // 2. Real Hardware / Browser Offline & Online Event Listeners
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+    const handleBrowserOffline = () => {
+      showBanner(
+        'error',
+        'Network Disconnected (Wi-Fi / Ethernet Off): Application is now in Offline Mode (HTTP 503).'
+      );
+    };
+    const handleBrowserOnline = () => {
+      showBanner(
+        'success',
+        'Network Connection Restored: Synchronizing latest tenant data...'
+      );
+      if (activeOrgId) {
+        void queryClient.invalidateQueries({
+          queryKey: ['tenant', activeOrgId],
+        });
+      }
+    };
+
+    window.addEventListener('offline', handleBrowserOffline);
+    window.addEventListener('online', handleBrowserOnline);
+    return () => {
+      window.removeEventListener('offline', handleBrowserOffline);
+      window.removeEventListener('online', handleBrowserOnline);
+    };
+  }, [activeOrgId, queryClient, showBanner]);
 
   const overviewQuery = useQuery({
     queryKey: ['tenant', activeOrgId, 'overview'],
@@ -166,6 +200,7 @@ export function WorkspaceGuard(): React.JSX.Element {
   return (
     <div className="min-h-screen bg-slate-50">
       <TopNavbar />
+      <ChaosControlDrawer />
 
       <main className="mx-auto max-w-7xl space-y-6 px-6 py-8">
         {banner ? (
@@ -218,12 +253,19 @@ export function WorkspaceGuard(): React.JSX.Element {
                 <button
                   type="button"
                   data-testid="bulk-delete-action-btn"
-                  onClick={() =>
-                    showBanner(
-                      'info',
-                      'Select one or more rows in the Employee Directory below to trigger Bulk Delete.'
-                    )
-                  }
+                  onClick={() => {
+                    const bulkTrigger = document.querySelector<HTMLButtonElement>(
+                      '[data-testid="confirm-bulk-delete-btn"]'
+                    );
+                    if (bulkTrigger) {
+                      bulkTrigger.click();
+                    } else {
+                      showBanner(
+                        'info',
+                        'Select one or more employee rows in the Employee Directory below to open the Bulk Delete Confirmation & Preview modal.'
+                      );
+                    }
+                  }}
                   className="inline-flex items-center gap-1.5 rounded-md border border-red-300 bg-red-50 px-3.5 py-2 text-xs font-semibold text-red-800 hover:bg-red-100"
                 >
                   <Trash2 className="h-4 w-4" aria-hidden="true" />
@@ -315,11 +357,13 @@ export function WorkspaceGuard(): React.JSX.Element {
           </section>
         ) : null}
 
-        <EmployeeTableSection
-          onDataMutated={() => {
-            void overviewQuery.refetch();
-          }}
-        />
+        <ComponentErrorBoundary boundaryName="EmployeeDirectoryModule">
+          <EmployeeTableSection
+            onDataMutated={() => {
+              void overviewQuery.refetch();
+            }}
+          />
+        </ComponentErrorBoundary>
 
         <section
           aria-labelledby="security-verifier-heading"

@@ -15,9 +15,10 @@ import {
 import { mockAuthApi } from '@/lib/mock-api/auth-api';
 import { useUiStore } from '@/store/ui-store';
 
-describe('Module B Advanced Employee Management Table (10,000+ Records & 9 Critical Scenarios)', () => {
+describe('Module B - Advanced Employee Management Table (10,000+ Records & 9 Critical Scenarios)', () => {
   beforeEach(() => {
     window.sessionStorage.clear();
+    window.localStorage.clear();
     window.history.replaceState(null, '', '/');
     clearSearchTermDelays();
     mockDb.reset();
@@ -26,7 +27,7 @@ describe('Module B Advanced Employee Management Table (10,000+ Records & 9 Criti
     useUiStore.getState().resetUiStore();
   });
 
-  it('Scenario 1: Search for "Asad", then immediately search for "Rahul" stale "Asad" response never overwrites "Rahul"', async () => {
+  it('Scenario 1: Search for "Asad", then immediately search for "Rahul" - stale "Asad" response never overwrites "Rahul"', async () => {
     const user = userEvent.setup();
 
     render(
@@ -40,15 +41,12 @@ describe('Module B Advanced Employee Management Table (10,000+ Records & 9 Criti
       expect(screen.getByTestId('employees-table')).toBeInTheDocument();
     });
 
-    // Trigger the deterministic race condition where "Asad" takes 450ms and "Rahul" takes 10ms
     await user.click(screen.getByTestId('race-demo-asad-rahul-btn'));
 
-    // Wait for "Rahul Sharma" to appear
     await waitFor(() => {
       expect(screen.getByTestId('row-name-emp-00002')).toHaveTextContent('Rahul Sharma');
     });
 
-    // Wait past the 450ms window of the slower "Asad" request and verify "Asad Khan" NEVER replaces "Rahul Sharma"
     await new Promise((r) => setTimeout(r, 520));
 
     expect(screen.getByTestId('row-name-emp-00002')).toHaveTextContent('Rahul Sharma');
@@ -69,7 +67,6 @@ describe('Module B Advanced Employee Management Table (10,000+ Records & 9 Criti
       expect(screen.getByTestId('employees-table')).toBeInTheDocument();
     });
 
-    // Change department filter and sort column
     setSearchTermDelayMs('', 80);
     await user.selectOptions(screen.getByTestId('filter-department'), 'Security');
     await user.selectOptions(screen.getByTestId('filter-status'), 'ACTIVE');
@@ -81,7 +78,6 @@ describe('Module B Advanced Employee Management Table (10,000+ Records & 9 Criti
       expect(window.location.search).toContain('sortBy=salaryUsd');
     });
 
-    // Unmount and remount to simulate browser page refresh (F5)
     unmount();
 
     render(
@@ -102,7 +98,6 @@ describe('Module B Advanced Employee Management Table (10,000+ Records & 9 Criti
       passwordPlain: 'GlobexAdmin!2026',
     });
 
-    // Globex has 120 employees. With pageSize=50, totalPages = 3 (50 + 50 + 20 on page 3)
     const page3Before = await mockEmployeesApi.list({
       token: session.token,
       organizationId: 'org-globex',
@@ -113,7 +108,6 @@ describe('Module B Advanced Employee Management Table (10,000+ Records & 9 Criti
     expect(page3Before.currentPage).toBe(3);
     expect(page3Before.items).toHaveLength(20);
 
-    // Delete all 20 employees on page 3 via bulkDelete
     const idsOnPage3 = page3Before.items.map((e) => e.id);
     const bulkRes = await mockEmployeesApi.bulkDelete({
       token: session.token,
@@ -122,7 +116,6 @@ describe('Module B Advanced Employee Management Table (10,000+ Records & 9 Criti
     });
     expect(bulkRes.deletedCount).toBe(20);
 
-    // Requesting page 3 now automatically clamps currentPage to 2 (since 100 items / 50 = 2 pages)
     const afterDelete = await mockEmployeesApi.list({
       token: session.token,
       organizationId: 'org-globex',
@@ -148,7 +141,6 @@ describe('Module B Advanced Employee Management Table (10,000+ Records & 9 Criti
       expect(screen.getByTestId('employees-table')).toBeInTheDocument();
     });
 
-    // Inject HTTP 500 failure (3 triggers so TanStack Query's 2 automatic retries also fail)
     mockApiEngine.enqueueFailureRule({
       id: 'fail-page-2',
       endpointPattern: 'employees.list',
@@ -163,7 +155,6 @@ describe('Module B Advanced Employee Management Table (10,000+ Records & 9 Criti
       expect(screen.getByText(/Failed to Load Employee Table/i)).toBeInTheDocument();
     });
 
-    // Click "Try Again" and verify page 2 loads cleanly
     await user.click(screen.getByRole('button', { name: /try again/i }));
 
     await waitFor(() => {
@@ -186,7 +177,6 @@ describe('Module B Advanced Employee Management Table (10,000+ Records & 9 Criti
     });
 
     const tbody = within(screen.getByTestId('employees-table')).getAllByRole('row');
-    // tbody[0] is header row, tbody[1] is first data row, tbody[2] is second data row
     const firstRow = tbody[1]!;
     const secondRow = tbody[2]!;
 
@@ -196,7 +186,6 @@ describe('Module B Advanced Employee Management Table (10,000+ Records & 9 Criti
 
     const secondRowInitialRenderCount = Number(secondRow.getAttribute('data-render-count'));
 
-    // Toggle status on the first row only
     await user.click(screen.getByTestId(`quick-status-btn-${firstEmpId}`));
 
     await waitFor(() => {
@@ -204,19 +193,65 @@ describe('Module B Advanced Employee Management Table (10,000+ Records & 9 Criti
       expect(updatedFirstRow.textContent).toContain('v2');
     });
 
-    // Verify the second row did NOT rerender when the first row was updated
     const secondRowAfter = screen.getByTestId(secondRowTestId);
     expect(Number(secondRowAfter.getAttribute('data-render-count'))).toBe(
       secondRowInitialRenderCount
     );
 
-    // Select firstEmpId, then reverse sort order and verify selection badge still holds firstEmpId
     await user.click(screen.getByTestId(`select-row-${firstEmpId}`));
     expect(screen.getByTestId('bulk-selection-bar')).toHaveTextContent(firstEmpId);
 
     await user.click(screen.getByTestId('sort-col-fullName'));
     await waitFor(() => {
       expect(screen.getByTestId('bulk-selection-bar')).toHaveTextContent(firstEmpId);
+    });
+  });
+
+  it('Bulk Delete Confirmation & Paginated Record Preview: opens confirmation modal with Previous/Next pagination and deletes only after explicit confirmation', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <AppProviders>
+        <HomePage />
+      </AppProviders>
+    );
+
+    await user.click(screen.getByTestId('login-submit-btn'));
+    await waitFor(() => {
+      expect(screen.getByTestId('employees-table')).toBeInTheDocument();
+    });
+
+    // Select all 25 rows on the current page
+    await user.click(screen.getByTestId('select-all-current-page'));
+    expect(screen.getByTestId('selected-count-badge')).toHaveTextContent(
+      '25 employee(s) selected by stable ID'
+    );
+
+    // Click "Review & Delete Selected (25)" -> must NOT delete immediately; opens BulkDeleteConfirmModal
+    await user.click(screen.getByTestId('confirm-bulk-delete-btn'));
+
+    expect(screen.getByTestId('bulk-delete-modal')).toBeInTheDocument();
+    expect(screen.getByTestId('bulk-delete-total-badge')).toHaveTextContent(
+      '25 record(s) scheduled for deletion'
+    );
+
+    // Verify pagination inside the modal (10 rows per page -> 3 pages total)
+    expect(screen.getByTestId('bulk-delete-pagination-summary')).toHaveTextContent('Page 1 of 3');
+
+    await user.click(screen.getByTestId('bulk-delete-page-next-btn'));
+    expect(screen.getByTestId('bulk-delete-pagination-summary')).toHaveTextContent('Page 2 of 3');
+
+    await user.click(screen.getByTestId('bulk-delete-page-prev-btn'));
+    expect(screen.getByTestId('bulk-delete-pagination-summary')).toHaveTextContent('Page 1 of 3');
+
+    // Confirm deletion explicitly
+    await user.click(screen.getByTestId('bulk-delete-confirm-exec-btn'));
+
+    await waitFor(() => {
+      expect(screen.queryByTestId('bulk-delete-modal')).not.toBeInTheDocument();
+      expect(screen.getByTestId('status-banner')).toHaveTextContent(
+        'Deleted 25 selected employee record(s).'
+      );
     });
   });
 });

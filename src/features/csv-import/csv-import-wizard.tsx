@@ -104,7 +104,7 @@ export function CsvImportWizard({
 
   const [jobStatus, setJobStatus] = useState<CsvImportJobStatusResponse | null>(null);
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
-  const [isPaused, setIsPaused] = useState<boolean>(false);
+  const [_isPaused, setIsPaused] = useState<boolean>(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [simulateFailureAtRow, setSimulateFailureAtRow] = useState<string>('');
   const [recoverableJobPointer, setRecoverableJobPointer] = useState<PersistedJobPointer | null>(

@@ -19,6 +19,7 @@ import {
   mockEmployeesApi,
   setSearchTermDelayMs,
 } from '@/lib/mock-api/employees-api';
+import { mockDb } from '@/lib/mock-api/db';
 import { mockApiEngine } from '@/lib/mock-api/engine';
 import { isMockApiError } from '@/lib/mock-api/errors';
 import type { ConflictErrorDetails, PaginatedResponse, SortField } from '@/types/api';
@@ -39,6 +40,7 @@ import { useUiStore } from '@/store/ui-store';
 import { useTableUrlState } from './use-table-url-state';
 import { EmployeeTableRow } from './employee-row';
 import { EmployeeQuickModal, type EmployeeFormValues } from './employee-quick-modal';
+import { BulkDeleteConfirmModal } from './bulk-delete-modal';
 import { CsvImportWizard } from '@/features/csv-import/csv-import-wizard';
 
 const DEPARTMENTS: ReadonlyArray<EmployeeDepartment | 'ALL'> = [
@@ -118,6 +120,7 @@ export function EmployeeTableSection({
 
   const [selectedIds, setSelectedIds] = useState<ReadonlySet<string>>(() => new Set());
   const [mutatingRowIds, setMutatingRowIds] = useState<ReadonlySet<string>>(() => new Set());
+  const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState<boolean>(false);
 
   const [modalMode, setModalMode] = useState<'create' | 'edit'>('create');
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
@@ -136,6 +139,7 @@ export function EmployeeTableSection({
 
   useEffect(() => {
     setSelectedIds(new Set());
+    setIsBulkDeleteModalOpen(false);
   }, [activeOrgId]);
 
   const queryKey = useMemo(
@@ -206,6 +210,21 @@ export function EmployeeTableSection({
       }
     },
   });
+
+  // Resolve full Employee records for all selectedIds across any pages within the active tenant
+  const resolvedSelectedEmployees = useMemo(() => {
+    if (selectedIds.size === 0 || !activeOrgId) {
+      return [];
+    }
+    const list: Employee[] = [];
+    for (const id of selectedIds) {
+      const emp = mockDb.getEmployeeById(id);
+      if (emp && emp.organizationId === activeOrgId) {
+        list.push(emp);
+      }
+    }
+    return list;
+  }, [activeOrgId, selectedIds, employeesQuery.data]);
 
   const quickToggleMutation = useMutation({
     mutationFn: async (employee: Employee) => {
@@ -313,6 +332,7 @@ export function EmployeeTableSection({
       });
     },
     onSuccess: (res) => {
+      setIsBulkDeleteModalOpen(false);
       setSelectedIds(new Set());
       showBanner('success', `Deleted ${res.deletedCount} selected employee record(s).`);
       void queryClient.invalidateQueries({
@@ -459,6 +479,17 @@ export function EmployeeTableSection({
         next.delete(employeeId);
       } else {
         next.add(employeeId);
+      }
+      return next;
+    });
+  }, []);
+
+  const handleRemoveFromBulkSelection = useCallback((employeeId: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.delete(employeeId);
+      if (next.size === 0) {
+        setIsBulkDeleteModalOpen(false);
       }
       return next;
     });
@@ -822,15 +853,11 @@ export function EmployeeTableSection({
                 type="button"
                 disabled={bulkDeleteMutation.isPending}
                 data-testid="confirm-bulk-delete-btn"
-                onClick={() => {
-                  bulkDeleteMutation.mutate(Array.from(selectedIds));
-                }}
+                onClick={() => setIsBulkDeleteModalOpen(true)}
                 className="inline-flex items-center gap-1.5 rounded bg-red-600 px-3 py-1 text-xs font-semibold text-white hover:bg-red-500 disabled:opacity-50"
               >
                 <Trash2 className="h-3.5 w-3.5" aria-hidden="true" />
-                {bulkDeleteMutation.isPending
-                  ? 'Deleting...'
-                  : `Delete Selected (${selectedIds.size})`}
+                Review &amp; Delete Selected ({selectedIds.size})
               </button>
             ) : null}
           </div>
@@ -1108,6 +1135,17 @@ export function EmployeeTableSection({
             expectedVersionOverride: options?.expectedVersionOverride,
             idempotencyKey: options?.idempotencyKey,
           });
+        }}
+      />
+
+      <BulkDeleteConfirmModal
+        isOpen={isBulkDeleteModalOpen}
+        selectedEmployees={resolvedSelectedEmployees}
+        isDeleting={bulkDeleteMutation.isPending}
+        onClose={() => setIsBulkDeleteModalOpen(false)}
+        onRemoveFromSelection={handleRemoveFromBulkSelection}
+        onConfirmDelete={() => {
+          bulkDeleteMutation.mutate(Array.from(selectedIds));
         }}
       />
 

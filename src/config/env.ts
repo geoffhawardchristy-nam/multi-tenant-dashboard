@@ -1,7 +1,7 @@
 import { z } from 'zod';
 
 const envSchema = z.object({
-  NEXT_PUBLIC_APP_NAME: z.string().min(1).default('NexusTenant Enterprise Admin'),
+  NEXT_PUBLIC_APP_NAME: z.string().min(1).default('GeoffHaward Enterprise Admin'),
   NEXT_PUBLIC_DEFAULT_SEED_COUNT: z.coerce.number().int().min(100).max(50000).default(10200),
   NEXT_PUBLIC_MOCK_BASE_LATENCY_MS: z.coerce.number().int().min(0).max(5000).default(40),
   NEXT_PUBLIC_SESSION_TTL_MINUTES: z.coerce.number().int().min(1).max(1440).default(60),
